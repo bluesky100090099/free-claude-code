@@ -28,20 +28,35 @@ def cmd_make(args) -> int:
     settings = Settings()
     if args.lang:
         settings.language = args.lang
-    batch = make(
-        args.input,
-        args.out,
-        args.count,
-        args.duration,
-        args.crop,
-        args.picker,
-        not args.no_captions,
-        settings,
-    )
-    if args.publish:
-        publish_batch(batch, args.platforms, args.next)
-    print(f"\nBATCH_DIR={batch}")
-    return 0
+    failed = 0
+    for source in args.input:  # several links / files in one go
+        try:
+            batch = make(
+                source,
+                args.out,
+                args.count,
+                args.duration,
+                args.crop,
+                args.picker,
+                not args.no_captions,
+                settings,
+                zoom=args.zoom,
+            )
+        except Exception as exc:
+            print(f"✗ {source}: {exc}", file=sys.stderr)
+            failed += 1
+            continue
+        if args.drive or args.sheet:
+            from reels.gdrive import export_to_google
+
+            try:
+                export_to_google(batch, upload=args.drive, sheet=args.sheet)
+            except Exception as exc:
+                print(f"✗ Google Drive/Sheets: {exc}", file=sys.stderr)
+        if args.publish:
+            publish_batch(batch, args.platforms, args.next)
+        print(f"\nBATCH_DIR={batch}")
+    return 1 if failed == len(args.input) else 0
 
 
 def cmd_publish(args) -> int:
@@ -159,7 +174,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     m = sub.add_parser("make", help="cut a long video into vertical clips")
-    m.add_argument("input", help="video file or URL")
+    m.add_argument("input", nargs="+", help="video file(s) or URL(s)")
     m.add_argument("-n", "--count", type=int, default=5)
     m.add_argument("-d", "--duration", type=float, default=15.0)
     m.add_argument("-o", "--out", default="out")
@@ -167,6 +182,14 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--picker", choices=["auto", "gemini", "energy"], default="auto")
     m.add_argument("--lang", help="caption/copy language, e.g. ar, en")
     m.add_argument("--no-captions", action="store_true")
+    m.add_argument(
+        "--zoom",
+        type=float,
+        default=0.06,
+        help="gentle zoom amount (0.06 = 6%%, 0 = off)",
+    )
+    m.add_argument("--drive", action="store_true", help="upload clips to Drive")
+    m.add_argument("--sheet", action="store_true", help="log clips in a Sheet")
     m.add_argument("--publish", action="store_true", help="publish right after")
     m.add_argument("--platforms", type=_platforms, default=PLATFORMS)
     m.add_argument("--next", type=int, default=0)

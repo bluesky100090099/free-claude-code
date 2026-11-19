@@ -12,14 +12,48 @@ class Post:
     title: str
     caption: str
     hashtags: list[str] = field(default_factory=list)
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
 
-    def text(self, limit: int = 2200, with_title: bool = False) -> str:
+    def text(
+        self,
+        limit: int = 2200,
+        with_title: bool = False,
+        max_hashtags: int = 8,
+        long: bool = False,
+    ) -> str:
         parts = [self.title] if with_title and self.title else []
-        if self.caption:
+        body = self.description if long and self.description else self.caption
+        if body:
+            parts.append(body)
+        if long and self.description and self.caption:
             parts.append(self.caption)
-        if self.hashtags:
-            parts.append(" ".join(self.hashtags))
+        if self.hashtags and max_hashtags:
+            parts.append(" ".join(self.hashtags[:max_hashtags]))
         return "\n\n".join(parts)[:limit]
+
+    def for_platform(self, platform: str) -> dict:
+        """The exact copy each platform gets (also used for the post kit)."""
+        title = self.title or self.caption or self.video.stem
+        if platform == "youtube":
+            yt_title = title if "#shorts" in title.lower() else f"{title[:91]} #Shorts"
+            tags, total = [], 0
+            for t in self.tags + [h.lstrip("#") for h in self.hashtags]:
+                if t not in tags and total + len(t) < 450:  # YouTube: 500 chars
+                    tags.append(t)
+                    total += len(t) + 1
+            return {
+                "title": yt_title[:100],
+                "description": self.text(4900, long=True, max_hashtags=3),
+                "tags": tags,
+            }
+        if platform == "instagram":  # Instagram allows max 5 hashtags
+            return {"caption": self.text(2200, max_hashtags=5)}
+        if platform == "facebook":
+            return {"description": self.text(2200, with_title=True, max_hashtags=5)}
+        if platform == "tiktok":
+            return {"caption": self.text(2200, max_hashtags=6)}
+        raise ValueError(platform)
 
 
 @dataclass

@@ -66,6 +66,7 @@ def make(
     captions: bool = True,
     settings: Settings | None = None,
     log=print,
+    zoom: float = 0.06,
 ) -> Path:
     require_ffmpeg()
     settings = settings or Settings()
@@ -127,7 +128,15 @@ def make(
             )
         log(f"  [{i}/{len(clips)}] {clip.start:.1f}s → {clip.end:.1f}s  {clip.title}")
         meta = render_clip(
-            src, info, clip, batch / name, crop, ass_path, settings.fonts_dir, log
+            src,
+            info,
+            clip,
+            batch / name,
+            crop,
+            ass_path,
+            settings.fonts_dir,
+            log,
+            zoom,
         )
         manifest_clips.append(
             {
@@ -141,6 +150,7 @@ def make(
 
     manifest = {
         "source": str(src),
+        "source_url": source if re.match(r"^https?://", source) else "",
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "language": settings.language,
         "duration": duration,
@@ -166,15 +176,31 @@ def load_manifest(target: str | Path) -> tuple[Path, dict]:
 
 def write_post_kit(batch: Path, manifest: dict) -> None:
     """Ready-to-paste text for manual posting (works with zero API setup)."""
+    from reels.publishers.base import Post
+
     lines = ["# Post kit – copy & paste\n"]
     for c in manifest["clips"]:
-        tags = " ".join(c["hashtags"])
+        post = Post(
+            batch / c["file"],
+            c["title"],
+            c["caption"],
+            c["hashtags"],
+            c.get("description", ""),
+            c.get("tags", []),
+        )
+        yt = post.for_platform("youtube")
         lines += [
             f"## {c['file']}  ({c['start']:.0f}s–{c['end']:.0f}s)",
             f"**Hook on screen:** {c['hook']}\n",
-            "**YouTube Shorts title:**",
-            f"```\n{c['title'][:91]} #Shorts\n```",
-            "**Instagram / Facebook / TikTok caption:**",
-            f"```\n{c['caption']}\n\n{tags}\n```\n",
+            "### YouTube Shorts",
+            f"Title:\n```\n{yt['title']}\n```",
+            f"Description:\n```\n{yt['description']}\n```",
+            f"Tags:\n```\n{', '.join(yt['tags'])}\n```",
+            "### Instagram",
+            f"```\n{post.for_platform('instagram')['caption']}\n```",
+            "### TikTok",
+            f"```\n{post.for_platform('tiktok')['caption']}\n```",
+            "### Facebook",
+            f"```\n{post.for_platform('facebook')['description']}\n```\n",
         ]
     (batch / "POST_KIT.md").write_text("\n".join(lines), "utf-8")

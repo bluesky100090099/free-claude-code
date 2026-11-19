@@ -34,7 +34,7 @@ class InstagramPublisher(Publisher):
                 data={
                     "media_type": "REELS",
                     "upload_type": "resumable",
-                    "caption": post.text(2200),
+                    "caption": post.for_platform("instagram")["caption"],
                     "share_to_feed": "true",
                     "access_token": token,
                 },

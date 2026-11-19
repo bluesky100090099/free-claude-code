@@ -52,6 +52,8 @@ def publish_batch(
             title=clip["title"],
             caption=clip["caption"],
             hashtags=clip["hashtags"],
+            description=clip.get("description", ""),
+            tags=clip.get("tags", []),
         )
         for pub in pending:
             if dry_run:

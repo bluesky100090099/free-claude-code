@@ -46,7 +46,7 @@ class FacebookPublisher(Publisher):
                     "upload_phase": "finish",
                     "video_id": video_id,
                     "video_state": "PUBLISHED",
-                    "description": post.text(2200, with_title=True),
+                    "description": post.for_platform("facebook")["description"],
                     "access_token": token,
                 },
                 timeout=60,

@@ -28,6 +28,8 @@ class Clip:
     title: str = ""
     caption: str = ""
     hashtags: list[str] = field(default_factory=list)
+    description: str = ""
+    tags: list[str] = field(default_factory=list)
     reason: str = ""
 
     @property
@@ -70,6 +72,17 @@ def clean_hashtags(tags: list[str] | str) -> list[str]:
         if t and f"#{t}" not in out:
             out.append(f"#{t}")
     return out[:8]
+
+
+def clean_tags(tags: list[str] | str) -> list[str]:
+    if isinstance(tags, str):
+        tags = tags.split(",")
+    out: list[str] = []
+    for t in tags:
+        t = " ".join(str(t).replace("#", " ").split())[:60]
+        if t and t not in out:
+            out.append(t)
+    return out[:15]
 
 
 def parse_timestamp(value: str | float | int) -> float:
@@ -149,6 +162,8 @@ Return ONLY a JSON array, best first, each item:
   "title": "<max 70 chars, curiosity driven>",
   "caption": "<1-2 engaging sentences + a call to action>",
   "hashtags": ["5-8 relevant hashtags, mix broad and niche"],
+  "description": "<3-4 sentence SEO description with natural keywords>",
+  "tags": ["8-15 search keywords / phrases people type, no #"],
   "reason": "<why this moment works, short>"}}
 The video is {total:.0f} seconds long, so start must be <= {max_start:.0f}."""
 
@@ -159,7 +174,7 @@ def _gemini_client(settings: Settings):
 
     return genai.Client(
         api_key=settings.gemini_api_key,
-        http_options=types.HttpOptions(timeout=240_000),  # ms
+        http_options=types.HttpOptions(timeout=120_000),  # ms
     )
 
 
@@ -273,6 +288,8 @@ def pick_with_gemini(
             title=str(it.get("title", "")).strip(),
             caption=str(it.get("caption", "")).strip(),
             hashtags=clean_hashtags(it.get("hashtags", [])),
+            description=str(it.get("description", "")).strip(),
+            tags=clean_tags(it.get("tags", [])),
             reason=str(it.get("reason", "")).strip(),
         )
         for it in items
@@ -318,7 +335,9 @@ COPY_PROMPT = """You write viral short-video copy. For each numbered clip transc
 below, write copy in language code "{language}".
 Return ONLY a JSON array with one object per clip, same order:
 {{"hook": "<max 6 words on-screen, no emojis>", "title": "<max 70 chars>",
-  "caption": "<1-2 sentences + call to action>", "hashtags": ["5-8 hashtags"]}}
+  "caption": "<1-2 sentences + call to action>", "hashtags": ["5-8 hashtags"],
+  "description": "<3-4 sentence SEO description>",
+  "tags": ["8-15 search keywords, no #"]}}
 
 {clips}"""
 
@@ -350,6 +369,8 @@ def write_copy(clips: list[Clip], texts: list[str], settings: Settings, log=prin
                 c.title = str(item.get("title", "")).strip()
                 c.caption = str(item.get("caption", "")).strip()
                 c.hashtags = clean_hashtags(item.get("hashtags", []))
+                c.description = str(item.get("description", "")).strip()
+                c.tags = clean_tags(item.get("tags", []))
             todo = [i for i in todo if not clips[i].title]
         except Exception as exc:
             log(f"  Gemini copywriting skipped ({str(exc)[:100]})")

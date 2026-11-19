@@ -31,14 +31,13 @@ class YouTubePublisher(Publisher):
     def publish(self, post: Post) -> PublishResult:
         from googleapiclient.http import MediaFileUpload
 
-        title = post.title or post.caption or post.video.stem
-        if "#shorts" not in title.lower():
-            title = f"{title[:91]} #Shorts"
+        copy = post.for_platform("youtube")
         body = {
             "snippet": {
-                "title": title[:100],
-                "description": post.text(4900),
-                "tags": [h.lstrip("#") for h in post.hashtags][:15],
+                "title": copy["title"],
+                "description": copy["description"],
+                "tags": copy["tags"],
+                "defaultLanguage": env("REELS_LANGUAGE", "ar"),
                 "categoryId": env("YT_CATEGORY_ID", "22"),
             },
             "status": {

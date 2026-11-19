@@ -73,6 +73,7 @@ def build_video_filter(
     center_x: float | None,
     ass_path: Path | None,
     fonts_dir: str = "",
+    zoom: float = 0.0,
 ) -> str:
     aspect = info.width / max(info.height, 1)
     if aspect <= 9 / 16 + 0.01:  # already vertical
@@ -97,6 +98,9 @@ def build_video_filter(
             f"[0:v]crop={crop_w}:{info.height}:{x}:0,scale={W}:{H}:flags=lanczos,"
             f"setsar=1"
         )
+    if zoom > 0:  # gentle "breathing" punch-in/out, captions stay still
+        z = f"(1+{zoom:.3f}*(0.5-0.5*cos(2*PI*t/6)))"
+        chain += f",scale=w='2*trunc({W}*{z}/2)':h=-2:eval=frame,crop={W}:{H},setsar=1"
     if ass_path is not None:
         extra = f":fontsdir={_filter_escape(Path(fonts_dir))}" if fonts_dir else ""
         chain += f",ass=filename={_filter_escape(ass_path)}{extra}"
@@ -112,12 +116,13 @@ def render_clip(
     ass_path: Path | None = None,
     fonts_dir: str = "",
     log=print,
+    zoom: float = 0.0,
 ) -> dict:
     out_path = Path(out_path)
     center_x = None
     if mode == "smart":
         center_x = face_center_x(src, clip.start, clip.duration)
-    vf = build_video_filter(info, mode, center_x, ass_path, fonts_dir)
+    vf = build_video_filter(info, mode, center_x, ass_path, fonts_dir, zoom)
     cmd = ["ffmpeg", "-y", "-v", "error", "-ss", f"{clip.start:.3f}", "-i", str(src)]
     if info.has_audio:
         af = "[0:a]loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000[a]"

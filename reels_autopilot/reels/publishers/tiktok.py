@@ -79,7 +79,7 @@ class TikTokPublisher(Publisher):
         if mode == "direct":
             body = {
                 "post_info": {
-                    "title": post.text(2200),
+                    "title": post.for_platform("tiktok")["caption"],
                     "privacy_level": env("TIKTOK_PRIVACY", "SELF_ONLY"),
                     "disable_comment": False,
                     "disable_duet": False,
