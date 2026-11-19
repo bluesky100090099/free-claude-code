@@ -168,6 +168,10 @@ markers = [
 [tool.ty.environment]
 python-version = "3.14"
 
+[tool.ty.src]
+# Standalone tool with its own optional dependencies (see reels_autopilot/README.md)
+exclude = ["reels_autopilot"]
+
 [tool.ty.analysis]
 # Optional voice_local extra: torch, transformers, librosa for local whisper transcription
 allowed-unresolved-imports = [

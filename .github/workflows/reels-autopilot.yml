@@ -1,0 +1,127 @@
+# Reels Autopilot – free pipeline: long video -> 15s Reels/Shorts -> publish.
+# Manual run: Actions tab -> "Reels Autopilot" -> Run workflow -> paste a video link.
+# Daily run: publishes the next queued clip (schedules run from the default branch).
+name: Reels Autopilot
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: "Link to YOUR video (Google Drive / Dropbox / direct .mp4 / YouTube)"
+        required: true
+      count:
+        description: "How many clips"
+        default: "5"
+      duration:
+        description: "Seconds per clip"
+        default: "15"
+      language:
+        description: "Captions & copy language (ar, en, fr…)"
+        default: "ar"
+      crop:
+        description: "Vertical framing"
+        type: choice
+        options: [smart, blur, center]
+        default: smart
+      publish_now:
+        description: "Publish now? (the rest go to the daily queue)"
+        type: choice
+        options: [first, all, none]
+        default: first
+  schedule:
+    - cron: "17 16 * * *" # every day 16:17 UTC (19:17 Mecca time) – edit freely
+
+permissions:
+  contents: write # needed to store clips in the free "reels-queue" release
+
+concurrency:
+  group: reels-autopilot
+  cancel-in-progress: false
+
+env:
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  YT_CLIENT_ID: ${{ secrets.YT_CLIENT_ID }}
+  YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+  YT_REFRESH_TOKEN: ${{ secrets.YT_REFRESH_TOKEN }}
+  YT_PRIVACY: ${{ vars.YT_PRIVACY || 'public' }}
+  IG_USER_ID: ${{ secrets.IG_USER_ID }}
+  IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+  FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+  FB_PAGE_TOKEN: ${{ secrets.FB_PAGE_TOKEN }}
+  TIKTOK_CLIENT_KEY: ${{ secrets.TIKTOK_CLIENT_KEY }}
+  TIKTOK_CLIENT_SECRET: ${{ secrets.TIKTOK_CLIENT_SECRET }}
+  TIKTOK_REFRESH_TOKEN: ${{ secrets.TIKTOK_REFRESH_TOKEN }}
+  TIKTOK_MODE: ${{ vars.TIKTOK_MODE || 'inbox' }}
+  PUBLISH_PER_RUN: ${{ vars.PUBLISH_PER_RUN || '1' }}
+  GH_TOKEN: ${{ github.token }}
+  WHISPER_MODEL: ${{ vars.WHISPER_MODEL || 'small' }}
+
+defaults:
+  run:
+    working-directory: reels_autopilot
+
+jobs:
+  make:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: reels_autopilot/requirements.txt
+      - name: Install ffmpeg + fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+      - name: Install Python packages
+        run: pip install -r requirements.txt
+      - name: Cache Whisper models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-${{ env.WHISPER_MODEL }}
+      - name: Make clips
+        env:
+          VIDEO_URL: ${{ inputs.video_url }}
+          COUNT: ${{ inputs.count }}
+          DURATION: ${{ inputs.duration }}
+          REELS_LANGUAGE: ${{ inputs.language }}
+          CROP: ${{ inputs.crop }}
+        run: |
+          python -m reels doctor
+          python -m reels make "$VIDEO_URL" -n "$COUNT" -d "$DURATION" --crop "$CROP" -o out
+      - name: Find batch
+        id: batch
+        run: echo "dir=$(ls -d out/*/ | grep -v _downloads | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Publish now
+        if: inputs.publish_now != 'none'
+        continue-on-error: true
+        env:
+          NEXT: ${{ inputs.publish_now == 'all' && '0' || '1' }}
+        run: python -m reels publish "${{ steps.batch.outputs.dir }}" --next "$NEXT"
+      - name: Add the rest to the daily queue
+        run: bash scripts/queue_add.sh "${{ steps.batch.outputs.dir }}"
+      - name: Upload clips (download them from this run to post manually)
+        uses: actions/upload-artifact@v4
+        with:
+          name: reels
+          path: |
+            reels_autopilot/out/*/*.mp4
+            reels_autopilot/out/*/POST_KIT.md
+            reels_autopilot/out/*/manifest.json
+          retention-days: 14
+
+  publish-next:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install publishing packages
+        run: pip install numpy requests google-api-python-client google-auth
+      - name: Publish next clip from the queue
+        run: bash scripts/queue_publish.sh

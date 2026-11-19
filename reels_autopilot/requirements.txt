@@ -1,0 +1,11 @@
+# Core (all free / open source)
+numpy>=1.26
+requests>=2.31
+opencv-python-headless>=4.9,<5 # smart face-centred crop (Haar cascades removed in 5.x)
+google-genai>=1.0               # Gemini API (free tier) – picks the best moments
+faster-whisper>=1.1             # word-level captions (runs on Colab GPU or CPU)
+yt-dlp>=2025.1.1                # optional: download your own videos from a URL
+# Publishing
+google-api-python-client>=2.100 # YouTube Data API v3
+google-auth>=2.25
+google-auth-oauthlib>=1.2       # only for `python -m reels auth youtube`
