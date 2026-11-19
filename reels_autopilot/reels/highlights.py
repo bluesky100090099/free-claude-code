@@ -155,8 +155,51 @@ The video is {total:.0f} seconds long, so start must be <= {max_start:.0f}."""
 
 def _gemini_client(settings: Settings):
     from google import genai  # lazy: optional dependency
+    from google.genai import types
 
-    return genai.Client(api_key=settings.gemini_api_key)
+    return genai.Client(
+        api_key=settings.gemini_api_key,
+        http_options=types.HttpOptions(timeout=240_000),  # ms
+    )
+
+
+FALLBACK_MODELS = (
+    "gemini-3.5-flash",
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+)
+
+
+def generate(settings: Settings, contents, config, log=print):
+    """generate_content that survives retired model names and free-tier limits."""
+    client = _gemini_client(settings)
+    models = [settings.gemini_model] + [
+        m for m in FALLBACK_MODELS if m != settings.gemini_model
+    ]
+    last: Exception | None = None
+    for model in models:
+        for attempt in range(2):
+            try:
+                return client.models.generate_content(
+                    model=model, contents=contents, config=config
+                )
+            except Exception as exc:
+                last, msg = exc, str(exc)
+                if "404" in msg or "NOT_FOUND" in msg:
+                    log(f"  Gemini model {model} unavailable – trying the next one")
+                    break
+                busy = ("429", "503", "500", "UNAVAIL", "disconnect", "timed out")
+                if any(k.lower() in msg.lower() for k in busy):
+                    if attempt == 0:
+                        log(f"  Gemini {model} busy – retrying in 15s")
+                        time.sleep(15)
+                        continue
+                    log(f"  Gemini {model} still busy – trying the next model")
+                    break
+                raise
+    raise RuntimeError(f"No Gemini model available: {last}")
 
 
 def _parse_gemini_json(text: str) -> list[dict]:
@@ -215,22 +258,7 @@ def pick_with_gemini(
             source = "Watch this video (visuals AND audio)."
             contents = [uploaded, PROMPT.format(source=source, **fmt)]
             log("  Gemini: picking the best moments…")
-        response = None
-        for attempt in range(4):
-            try:
-                response = client.models.generate_content(
-                    model=settings.gemini_model, contents=contents, config=config
-                )
-                break
-            except Exception as exc:  # free tier: 429 / 503 – back off
-                msg = str(exc)
-                if attempt < 3 and ("429" in msg or "503" in msg or "UNAVAIL" in msg):
-                    wait = 20 * (attempt + 1)
-                    log(f"  Gemini busy ({msg[:60]}…) – retrying in {wait}s")
-                    time.sleep(wait)
-                    continue
-                raise
-        assert response is not None
+        response = generate(settings, contents, config, log)
         items = _parse_gemini_json(response.text or "[]")
     finally:
         if uploaded is not None:
@@ -307,12 +335,13 @@ def write_copy(clips: list[Clip], texts: list[str], settings: Settings, log=prin
             listing = "\n\n".join(
                 f"{n + 1}. {texts[i] or '(no speech)'}" for n, i in enumerate(todo)
             )
-            resp = _gemini_client(settings).models.generate_content(
-                model=settings.gemini_model,
-                contents=COPY_PROMPT.format(language=settings.language, clips=listing),
-                config=types.GenerateContentConfig(
+            resp = generate(
+                settings,
+                COPY_PROMPT.format(language=settings.language, clips=listing),
+                types.GenerateContentConfig(
                     response_mime_type="application/json", temperature=0.7
                 ),
+                log,
             )
             data = json.loads(resp.text or "[]")
             for i, item in zip(todo, data, strict=False):

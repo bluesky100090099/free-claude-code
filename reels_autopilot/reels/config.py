@@ -29,7 +29,7 @@ def _env(name: str, default: str = "") -> str:
 class Settings:
     gemini_api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
     gemini_model: str = field(
-        default_factory=lambda: _env("GEMINI_MODEL", "gemini-2.5-flash")
+        default_factory=lambda: _env("GEMINI_MODEL", "gemini-3.5-flash")
     )
     language: str = field(default_factory=lambda: _env("REELS_LANGUAGE", "ar"))
     whisper_model: str = field(default_factory=lambda: _env("WHISPER_MODEL", "small"))
